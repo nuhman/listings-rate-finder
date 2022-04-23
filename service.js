@@ -5,6 +5,7 @@ const { getVrboListingsParams } = require('./data/queryParams');
 const { getVariableValueFromText, getDaysArray, getMaxElements } = require('./utilities');
 
 const BASE_DOMAIN = 'https://www.vrbo.com';
+const TOTAL_LISTING_PAD = 10;
 
 const getSingleListingData = async (url) => {
     
@@ -40,11 +41,14 @@ const getSingleListingData = async (url) => {
                         endDate,
                         rentNights
                     } = initialState?.listingReducer?.rateSummary;
+
+                    const priceSymbol = initialState?.listingReducer?.priceSummary?.currencySymbol;
                     
                     return {
                         rentNights,
                         beginDate,
                         endDate,
+                        priceSymbol,
                     }
                 }
             }
@@ -55,6 +59,7 @@ const getSingleListingData = async (url) => {
             rentNights: [],
             beginDate: null,
             endDate: null,
+            priceSymbol: null,
         }
             
     } catch (e) {
@@ -63,7 +68,7 @@ const getSingleListingData = async (url) => {
     }
 }
 
-exports.getAllListings = async function (count = 50) {
+exports.getAllListings = async function (count) {
 
     try {
 
@@ -71,7 +76,7 @@ exports.getAllListings = async function (count = 50) {
             "content-type": "application/json",
         };
         
-        const body = getVrboListingsParams(count);
+        const body = getVrboListingsParams(count + TOTAL_LISTING_PAD);
         const response = await axios.post(`${BASE_DOMAIN}/serp/g`, body, { headers });
 
         // continue if results are present in the API response
@@ -92,9 +97,6 @@ exports.getAllListings = async function (count = 50) {
                 header: [
                     {id: 'listingId', title: 'Listing Id'},
                     {id: 'unitName', title: 'Property Name'},    
-                    {id: 'high1', title: 'Highest Price'},
-                    {id: 'high2', title: 'Second Highest Price'},
-                    {id: 'high3', title: 'Third Highest Price'},
                 ]
             };
 
@@ -105,80 +107,86 @@ exports.getAllListings = async function (count = 50) {
             let finishedCount = 0;
             
             for(const listing of listings) {
-                const {
-                    propertyId,
-                    propertyMetadata,
-                    detailPageUrl,
-                } = listing;
-                let rentStartIndex = 0;
 
-                // remove non-ascii characters from property name
-                const unitName = propertyMetadata?.headline && propertyMetadata?.headline.replace(/[^\x00-\x7F]/g, "").trim();
+                if (finishedCount < count) {
+                    const {
+                        propertyId,
+                        propertyMetadata,
+                        detailPageUrl,
+                    } = listing;
+                    let rentStartIndex = 0;
 
-                const listingReducer = await getSingleListingData(`${BASE_DOMAIN}${detailPageUrl}`);
-                
-                // if there are no dates present in the CSV options header - then add it
-                if (
-                    listingReducer?.beginDate && 
-                    listingReducer?.endDate &&
-                    csvPropObject.header?.length <= 5 // NO dates columns present in the CSV header
-                ) {
+                    // remove non-ascii characters from property name
+                    const unitName = propertyMetadata?.headline && propertyMetadata?.headline.replace(/[^\x00-\x7F]/g, "").trim();
+
+                    const listingReducer = await getSingleListingData(`${BASE_DOMAIN}${detailPageUrl}`);
                     
-                    // get the days array in the form of ['23-04-22', ...], for the range between beginDate & endDate
-                    const { days, pastTodayIndex } = getDaysArray(listingReducer?.beginDate, listingReducer?.endDate);
-                    rentStartIndex = pastTodayIndex;
+                    // if there are no dates present in the CSV options header - then add it
+                    if (
+                        listingReducer?.beginDate && 
+                        listingReducer?.endDate &&
+                        csvPropObject.header?.length <= 2 // NO dates columns present in the CSV header
+                    ) {
+                        
+                        // get the days array in the form of ['23-04-22', ...], for the range between beginDate & endDate
+                        const { days, pastTodayIndex } = getDaysArray(listingReducer?.beginDate, listingReducer?.endDate);
+                        rentStartIndex = pastTodayIndex;
 
-                    // create a new array in the form of [{id: 'day0', title: '23-04-22'},...] for CSV header
-                    const daysHeader = (days || []).map((day, i) => {
-                        return {
-                            id: `day${i}`, title: day,
-                        };
-                    });
+                        // create a new array in the form of [{id: 'day0', title: '23-04-22'},...] for CSV header
+                        const daysHeader = (days || []).map((day, i) => {
+                            return {
+                                id: `day${i}`, title: day,
+                            };
+                        });
 
-                    // add the created daysHeader array to the CSV header options
-                    csvPropObject = {
-                        ...csvPropObject,
-                        header: [
-                            ...csvPropObject.header,
-                            ...daysHeader,
-                        ]
+                        // add the created daysHeader array to the CSV header options
+                        csvPropObject = {
+                            ...csvPropObject,
+                            header: [
+                                ...csvPropObject.header,
+                                ...daysHeader,
+                                {id: 'high1', title: 'Highest Price'},
+                                {id: 'high2', title: 'Second Highest Price'},
+                                {id: 'high3', title: 'Third Highest Price'},
+                            ]
+                        }
+
+                        // update csvWriter object
+                        csvWriter = createCsvWriter(csvPropObject);
                     }
 
-                    // update csvWriter object
-                    csvWriter = createCsvWriter(csvPropObject);
-                }
+                    const csvDataObject = {
+                        listingId: propertyId,
+                        unitName,    
+                    };
 
-                const csvDataObject = {
-                    listingId: propertyId,
-                    unitName,    
-                };
+                    // add rent data to CSV data object starting from today upto next 365 days
+                    const rents = (listingReducer?.rentNights || []).slice(rentStartIndex, rentStartIndex + 365);
 
-                // add rent data to CSV data object starting from today upto next 365 days
-                const rents = (listingReducer?.rentNights || []).slice(rentStartIndex, rentStartIndex + 365);
-
-                rents.forEach((rent, j) => {
-                    const key = `day${j}`;
-                    if (!(csvDataObject[key])) {
-                        csvDataObject[key] = rent;
-                    }
-                });
-
-                // add the current listing data to csvData array
-                if (rents.length) {
-                    // get highest 3 prices for the listing
-                    const costlyListings = getMaxElements(rents, 3);
-                    const csvheaderOffset =  5;
-
-                    csvData.push({
-                        ...csvDataObject,
-                        high1: `${costlyListings[2].value} (${csvPropObject.header[costlyListings[2].index + csvheaderOffset].title})`,
-                        high2: `${costlyListings[1].value} (${csvPropObject.header[costlyListings[1].index + csvheaderOffset].title})`,
-                        high3: `${costlyListings[0].value} (${csvPropObject.header[costlyListings[0].index + csvheaderOffset].title})`,
+                    rents.forEach((rent, j) => {
+                        const key = `day${j}`;
+                        if (!(csvDataObject[key])) {
+                            csvDataObject[key] = `${listingReducer.priceSymbol}${rent}`;
+                        }
                     });
+
+                    // add the current listing data to csvData array
+                    if (rents.length) {
+                        // get highest 3 prices for the listing
+                        const costlyListings = getMaxElements(rents, 3);
+                        const csvheaderOffset =  5;
+
+                        csvData.push({
+                            ...csvDataObject,
+                            high1: `${csvPropObject.header[costlyListings[2].index + csvheaderOffset].title} (${listingReducer.priceSymbol}${costlyListings[2].value})`,
+                            high2: `${csvPropObject.header[costlyListings[1].index + csvheaderOffset].title} (${listingReducer.priceSymbol}${costlyListings[1].value})`,
+                            high3: `${csvPropObject.header[costlyListings[0].index + csvheaderOffset].title} (${listingReducer.priceSymbol}${costlyListings[0].value})`,
+                        });
+                    }
+                    
+                    finishedCount += 1;
+                    console.log('Fetch Progress: %d%', Math.floor((finishedCount/count)*100));
                 }
-                
-                finishedCount += 1;
-                console.log('Fetch Progress: %d%', Math.floor((finishedCount/count)*100));
             };
 
             // finally write CSV file with the generated data
@@ -193,9 +201,9 @@ exports.getAllListings = async function (count = 50) {
                 });
              
             return { status: 'success-getAllListings', };
-        } else {
+        } 
 
-        }
+        return { status: 'failure-getAllListings', };
     } catch (e) {
         // Log Errors
         console.log(e);
