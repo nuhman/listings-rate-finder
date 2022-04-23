@@ -19,12 +19,37 @@ const getDaysArray = (start, end, rangeLength = 365) => {
         loopIndex += 1;
     }
     return {
-        days: arr.map(v => v.toISOString().slice(0,10)).slice(0, rangeLength),
+        days: arr.map(v => formatDate(v)).slice(0, rangeLength),
         pastTodayIndex,
     };
 };
 
+const getMaxElements = (arr, count = 3) => {
+    
+    if (arr.length <= count) return arr;
+
+    let max = [
+        { value: arr[0], index: 0 },
+        { value: arr[1], index: 1 },
+        { value: arr[2], index: 2 }
+    ];
+    max.sort((a,b) => a.value - b.value);
+        
+    for (let i = 3; i < arr.length; i++) {
+        if (arr[i] > max[0].value){
+           max[0] = { value: arr[i], index: i };
+           max.sort((a,b) => a.value - b.value);
+        }
+    }
+    return max;
+}
+
+const formatDate = (dt) => {
+    return dt.toDateString().split(' ').slice(1).join(' ');
+} 
+
 module.exports = {
     getVariableValueFromText,
     getDaysArray,
+    getMaxElements,
 };

@@ -2,7 +2,7 @@ const createCsvWriter = require('csv-writer').createObjectCsvWriter;
 const axios = require('axios');
 const cheerio = require('cheerio');
 const { getVrboListingsParams } = require('./data/queryParams');
-const { getVariableValueFromText, getDaysArray } = require('./utilities');
+const { getVariableValueFromText, getDaysArray, getMaxElements } = require('./utilities');
 
 const BASE_DOMAIN = 'https://www.vrbo.com';
 
@@ -92,6 +92,9 @@ exports.getAllListings = async function (count = 50) {
                 header: [
                     {id: 'listingId', title: 'Listing Id'},
                     {id: 'unitName', title: 'Property Name'},    
+                    {id: 'high1', title: 'Highest Price'},
+                    {id: 'high2', title: 'Second Highest Price'},
+                    {id: 'high3', title: 'Third Highest Price'},
                 ]
             };
 
@@ -118,7 +121,7 @@ exports.getAllListings = async function (count = 50) {
                 if (
                     listingReducer?.beginDate && 
                     listingReducer?.endDate &&
-                    csvPropObject.header?.length <= 3 // NO dates columns present in the CSV header
+                    csvPropObject.header?.length <= 5 // NO dates columns present in the CSV header
                 ) {
                     
                     // get the days array in the form of ['23-04-22', ...], for the range between beginDate & endDate
@@ -151,7 +154,9 @@ exports.getAllListings = async function (count = 50) {
                 };
 
                 // add rent data to CSV data object starting from today upto next 365 days
-                (listingReducer?.rentNights || []).slice(rentStartIndex, 365).forEach((rent, j) => {
+                const rents = (listingReducer?.rentNights || []).slice(rentStartIndex, rentStartIndex + 365);
+
+                rents.forEach((rent, j) => {
                     const key = `day${j}`;
                     if (!(csvDataObject[key])) {
                         csvDataObject[key] = rent;
@@ -159,8 +164,17 @@ exports.getAllListings = async function (count = 50) {
                 });
 
                 // add the current listing data to csvData array
-                if ((listingReducer?.rentNights || []).length) {
-                    csvData.push(csvDataObject);
+                if (rents.length) {
+                    // get highest 3 prices for the listing
+                    const costlyListings = getMaxElements(rents, 3);
+                    const csvheaderOffset =  5;
+
+                    csvData.push({
+                        ...csvDataObject,
+                        high1: `${costlyListings[2].value} (${csvPropObject.header[costlyListings[2].index + csvheaderOffset].title})`,
+                        high2: `${costlyListings[1].value} (${csvPropObject.header[costlyListings[1].index + csvheaderOffset].title})`,
+                        high3: `${costlyListings[0].value} (${csvPropObject.header[costlyListings[0].index + csvheaderOffset].title})`,
+                    });
                 }
                 
                 finishedCount += 1;
@@ -178,7 +192,7 @@ exports.getAllListings = async function (count = 50) {
                     return { status: 'error-csv' }
                 });
              
-            return csvPropObject;
+            return { status: 'success-getAllListings', };
         } else {
 
         }
