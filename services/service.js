@@ -1,8 +1,8 @@
 const createCsvWriter = require('csv-writer').createObjectCsvWriter;
 const axios = require('axios');
 const cheerio = require('cheerio');
-const { getVrboListingsParams } = require('./data/queryParams');
-const { getVariableValueFromText, getDaysArray, getMaxElements, getLocationFromResponse, getDaysRange } = require('./utilities');
+const { getVrboListingsParams } = require('../data/queryParams');
+const { getVariableValueFromText, getDaysArray, getMaxElements, getLocationFromResponse, getDaysRange } = require('../utilities');
 
 const BASE_DOMAIN = 'https://www.vrbo.com';
 const TOTAL_LISTING_PAD = 10;
@@ -95,7 +95,7 @@ exports.getAllListings = async function (count, location) {
 
             // options object for creating CSV file - will add dates to the header array
             let csvPropObject = {
-                path: './output/data.csv',
+                path: `./data/csv-output-data-${location}.csv`,
                 header: [
                     {id: 'listingId', title: 'Listing Id'},
                     {id: 'unitName', title: 'Property Name'},    

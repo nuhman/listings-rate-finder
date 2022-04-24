@@ -1,4 +1,4 @@
-const service = require('./service');
+const service = require('../services/service');
 
 exports.getListings = async function (req, res, next) {
 
