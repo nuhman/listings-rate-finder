@@ -2,7 +2,7 @@ const createCsvWriter = require('csv-writer').createObjectCsvWriter;
 const axios = require('axios');
 const cheerio = require('cheerio');
 const { getVrboListingsParams } = require('./data/queryParams');
-const { getVariableValueFromText, getDaysArray, getMaxElements } = require('./utilities');
+const { getVariableValueFromText, getDaysArray, getMaxElements, getLocationFromResponse, getDaysRange } = require('./utilities');
 
 const BASE_DOMAIN = 'https://www.vrbo.com';
 const TOTAL_LISTING_PAD = 10;
@@ -68,7 +68,7 @@ const getSingleListingData = async (url) => {
     }
 }
 
-exports.getAllListings = async function (count) {
+exports.getAllListings = async function (count, location) {
 
     try {
 
@@ -76,12 +76,14 @@ exports.getAllListings = async function (count) {
             "content-type": "application/json",
         };
         
-        const body = getVrboListingsParams(count + TOTAL_LISTING_PAD);
+        const body = getVrboListingsParams(count + TOTAL_LISTING_PAD, location);
         const response = await axios.post(`${BASE_DOMAIN}/serp/g`, body, { headers });
 
         // continue if results are present in the API response
         if (response?.data?.data?.results) {
             const { resultCount, listings } = response.data.data.results;
+
+            const apiResponse = [];
 
             if (!listings || listings.length <= 0) {
                 return {
@@ -104,9 +106,11 @@ exports.getAllListings = async function (count) {
             const csvData = [];
 
             
+            const daysRangeLength = getDaysRange();
             let finishedCount = 0;
-            
             for(const listing of listings) {
+
+                let dates = [];
 
                 if (finishedCount < count) {
                     const {
@@ -129,8 +133,9 @@ exports.getAllListings = async function (count) {
                     ) {
                         
                         // get the days array in the form of ['23-04-22', ...], for the range between beginDate & endDate
-                        const { days, pastTodayIndex } = getDaysArray(listingReducer?.beginDate, listingReducer?.endDate);
+                        const { days, pastTodayIndex } = getDaysArray(listingReducer?.beginDate, listingReducer?.endDate, daysRangeLength);
                         rentStartIndex = pastTodayIndex;
+                        dates = days;
 
                         // create a new array in the form of [{id: 'day0', title: '23-04-22'},...] for CSV header
                         const daysHeader = (days || []).map((day, i) => {
@@ -160,13 +165,18 @@ exports.getAllListings = async function (count) {
                         unitName,    
                     };
 
-                    // add rent data to CSV data object starting from today upto next 365 days
-                    const rents = (listingReducer?.rentNights || []).slice(rentStartIndex, rentStartIndex + 365);
+                    // add rent data to CSV data object starting from today upto next 12 months
+                    const rents = (listingReducer?.rentNights || []).slice(rentStartIndex, rentStartIndex + daysRangeLength);
 
+
+                    const rateDateMap = {};
                     rents.forEach((rent, j) => {
                         const key = `day${j}`;
                         if (!(csvDataObject[key])) {
                             csvDataObject[key] = `${listingReducer.priceSymbol}${rent}`;
+                        }
+                        if (!rateDateMap[dates[j]]) {
+                            rateDateMap[dates[j]] = `${listingReducer.priceSymbol}${rent}`;
                         }
                     });
 
@@ -183,6 +193,11 @@ exports.getAllListings = async function (count) {
                             high3: `${csvPropObject.header[costlyListings[0].index + csvheaderOffset].title} (${listingReducer.priceSymbol}${costlyListings[0].value})`,
                         });
                     }
+
+                    apiResponse.push({
+                        unitName,
+                        rateDateMap,
+                    });
                     
                     finishedCount += 1;
                     console.log('Fetch Progress: %d%', Math.floor((finishedCount/count)*100));
@@ -200,7 +215,7 @@ exports.getAllListings = async function (count) {
                     return { status: 'error-csv' }
                 });
              
-            return { status: 'success-getAllListings', };
+            return { status: 'success-getAllListings', data: apiResponse };
         } 
 
         return { status: 'failure-getAllListings', };
@@ -210,6 +225,24 @@ exports.getAllListings = async function (count) {
         throw Error('Error while Getting the Listings');
     }
 
+}
+
+exports.getSuggestedLocation = async function (location) {
+    try {
+
+        const headers = { 
+            "content-type": "application/json",
+        };
+        const suggestionURL = `${BASE_DOMAIN}/geo/v2/typeahead/suggest?site=vrbo&size=3&locale=en_US&_restfully=true&input=${encodeURIComponent(location)}`
+        const response = await axios.get(`${suggestionURL}`, { headers });
+        
+        const typedLocation = getLocationFromResponse(response?.data, location);
+        return { suggestedLocation: typedLocation };
+
+    } catch (e) {
+        console.log(e);
+        throw Error('Error while getting location suggestion');
+    }
 }
 
 

@@ -1,5 +1,5 @@
 
-const getVrboListingsParams = (pageSize = 50) => {
+const getVrboListingsParams = (pageSize = 50, location) => {
     return {
         "operationName": "SearchRequestQuery",
         "variables": {
@@ -23,7 +23,7 @@ const getVrboListingsParams = (pageSize = 50) => {
                     "pets": 0
                 },
                 "filters": [],                
-                "q": "73-w-monroe-st-chicago-il-60603-usa"
+                "q": location,
             },
             "optimizedBreadcrumb": false,
             "vrbo_web_global_messaging_banner": true

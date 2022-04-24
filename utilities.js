@@ -48,8 +48,36 @@ const formatDate = (dt) => {
     return dt.toDateString().split(' ').slice(1).join(' ');
 } 
 
+const getFormattedLocation = (location) => {
+    if (!location) return '';
+    return location.replace(/[,\s]+|[,\s]+/g, '-').toLowerCase();
+}
+
+const getLocationFromResponse = (data, searchLocation) => {
+    if (!data) return null;
+    const { suggestions } = data;
+    if (!suggestions || suggestions.length <= 0) return getFormattedLocation(searchLocation);
+    const priorityLocations = suggestions.filter(sg => !(sg?.place?.types?.includes("POINT_OF_INTEREST")));
+    if (!priorityLocations || priorityLocations.length <= 0) {
+        return getFormattedLocation(suggestions[0]?.place?.fullName);
+    }
+    return getFormattedLocation(priorityLocations[0]?.place?.fullName);
+}
+
+const findDaysInMonth = (monthIndex) => {
+    return [monthIndex];
+}
+
+const getDaysRange = () => {
+    const today = new Date();
+    const monthDays = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][today.getMonth()];
+    return 366 + Math.abs(today.getDate() - monthDays);
+}
+
 module.exports = {
     getVariableValueFromText,
     getDaysArray,
     getMaxElements,
+    getLocationFromResponse,
+    getDaysRange,
 };
